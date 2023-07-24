@@ -1,25 +1,19 @@
-
-import os,cv2
+import keras
+import os, cv2
 import numpy as np
 import pandas as pd
-from math import exp, sqrt
+from keras import Input
+import tensorflow as tf
+from keras.models import Model
 import matplotlib.pyplot as plt
-from sklearn import svm, datasets
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import confusion_matrix
-from sklearn.utils.multiclass import unique_labels
-import matplotlib.image as mpimg
 from sklearn.utils import shuffle
 from keras.utils import np_utils
-import keras
-import tensorflow as tf
 import tensorflow.keras.backend as K
-from sklearn.utils import shuffle
-from keras import Input
-from keras.models import Model
-from keras.layers.core import Dense, Dropout, Activation, Flatten
-from keras.layers import  BatchNormalization, Concatenate, Add, DepthwiseConv2D, GlobalAveragePooling2D, SeparableConv2D
-from tensorflow.keras.optimizers import SGD,RMSprop,Adam,Adagrad
+from sklearn.model_selection import train_test_split
+from keras.layers.core import Dense, Activation, Flatten
+from keras.layers import  BatchNormalization, Concatenate, Add, DepthwiseConv2D, GlobalAveragePooling2D
+from tensorflow.keras.optimizers import Adam
+from sklearn.model_selection import StratifiedKFold
 from keras.layers.convolutional import Conv2D, MaxPooling2D
 
 data_path='/home/drayanserver/Desktop/Generated_Images' # Path for generated images
@@ -39,20 +33,17 @@ label=np.array(labels)
 img_data = np.array(img_data_list)
 img_data = img_data.astype('float32')
 img_data = img_data/255
-img_data.shape
+print(img_data.shape)
 
 plt.imshow(img_data[30], cmap = 'gray')
 plt.show
 
 num_classes = 2 # Number of classes in your dataset
-Y = np_utils.to_categorical(label, num_classes)
-x,y = shuffle(data,Y, random_state=42)
+x,y = shuffle(img_data, label, random_state=42)
 
 from keras.layers import LeakyReLU
 from keras.layers import *
-def PSFAN(input_1,num_classes):
-
-  input = Input(shape=(128, 128, 3), name='input')
+def PSFAN(input, num_classes):
 
   conv1 = Conv2D(32,(3,3), dilation_rate = 1,activation = LeakyReLU(alpha=0.02))(input)
   x = Conv2D(32,(1,1), padding = 'same')(conv1)
@@ -102,37 +93,52 @@ def PSFAN(input_1,num_classes):
   OUT  = Dense(num_classes, activation='softmax')(D2)
   model = Model(inputs= [input], outputs= OUT, name="BaseModel")
   return model
+    
 
 from sklearn.model_selection import StratifiedKFold
-
+input = Input(shape=(128, 128, 3), name='input')
 # Initialize your model
-model = PSFAN()
-model.summary()
+model = PSFAN(input, num_classes)
 
 # Initialize 10-fold cross-validation
 kfold = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
 
 # Lists to store the performance metrics from each fold
 accuracy_scores = []
-loss_scores = []
 
 # Cross-validation loop
 for train_index, test_index in kfold.split(x, y):
     X_train, X_test = x[train_index], x[test_index]
     y_train, y_test = y[train_index], y[test_index]
 
-    # Compile and train the CNN model on the training data
-    model.compile(optimizer= Adam(lr=0.0001, decay = 0.0006), loss='binary_crossentropy', metrics=['accuracy'])
-    model.fit(X_train, y_train, epochs=50, batch_size=16, verbose=1)
+    y_train = np_utils.to_categorical(y_train, num_classes)
+    y_test = np_utils.to_categorical(y_test, num_classes)
 
-    # Evaluate the model on the test data
-    loss, accuracy = model.evaluate(X_test, y_test, verbose=1)
+    # Compile and train the CNN model on the training data
+    model.compile(optimizer= Adam(learning_rate = 0.0001, weight_decay = 0.0006), loss='binary_crossentropy', metrics=['accuracy'])
+    model.fit(X_train, y_train, validation_data = (X_test, y_test), epochs = 50, batch_size = 16, verbose = 1)
+
+    pred = model.predict(X_test)
+    y_pred = np.argmax(pred, axis = 1)
+    y_true = np.argmax(y_test, axis = 1)
+
+    if len(y_pred) != len(y_true):
+        raise ValueError("Lengths of predictions and ground_truth lists must be the same.")
+    
+    correct_count = 0
+    total_count = len(y_pred)
+    
+    for pred, truth in zip(y_pred, y_true):
+        if pred == truth:
+            correct_count += 1
+
+    accuracy = correct_count / total_count * 100
+
+    print(accuracy)
+
     accuracy_scores.append(accuracy)
-    loss_scores.append(loss)
 
 # Calculate and display the average performance across all folds
 mean_accuracy = sum(accuracy_scores) / len(accuracy_scores)
-mean_loss = sum(loss_scores) / len(loss_scores)
 
 print(f"Mean Accuracy: {mean_accuracy:.2f}")
-print(f"Mean Loss: {mean_loss:.2f}")
